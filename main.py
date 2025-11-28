@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional
 from dotenv import load_dotenv
 import aiohttp
 from aiogram import Bot, Dispatcher, types, F
+from prometheus_client import Gauge, Counter, Histogram, start_http_server
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -65,6 +66,29 @@ user_states: Dict[int, Dict[str, Any]] = {}
 user_stats: Dict[int, Dict[str, int]] = defaultdict(lambda: {"texts": 0, "errors": 0})
 bot_stats = {"total_texts": 0, "total_users": 0, "start_time": datetime.now().isoformat()}
 
+# Prometheus metrics
+total_users_gauge = Gauge('telegram_bot_total_users', 'Total number of users')
+total_texts_gauge = Gauge('telegram_bot_total_texts', 'Total number of texts processed')
+total_errors_gauge = Gauge('telegram_bot_total_errors', 'Total number of errors')
+
+# Counters
+command_starts = Counter('telegram_bot_command_starts_total', 'Total /start commands')
+messages_received = Counter('telegram_bot_messages_received_total', 'Total messages received from users')
+bot_errors_sent = Counter('telegram_bot_bot_errors_sent_total', 'Total error messages sent by bot')
+
+# Histograms
+file_processing_time = Histogram('telegram_bot_file_processing_seconds', 'Time spent processing files')
+
+# Counters for successful operations
+successful_operations = Counter('telegram_bot_successful_operations_total', 'Total successful operations')
+
+def update_metrics():
+    total_users = len(user_stats)
+    total_texts = sum(stats.get('texts', 0) for stats in user_stats.values())
+    total_errors = sum(stats.get('errors', 0) for stats in user_stats.values())
+    total_users_gauge.set(total_users)
+    total_texts_gauge.set(total_texts)
+    total_errors_gauge.set(total_errors)
 
 # Load statistics
 def load_stats():
@@ -75,6 +99,7 @@ def load_stats():
                 global user_stats, bot_stats
                 user_stats = defaultdict(lambda: {"texts": 0, "errors": 0}, data.get("user_stats", {}))
                 bot_stats = data.get("bot_stats", bot_stats)
+        update_metrics()
     except Exception as e:
         logger.error(f"Failed to load statistics: {e}")
 
@@ -87,6 +112,7 @@ def save_stats():
                 "user_stats": dict(user_stats),
                 "bot_stats": bot_stats
             }, f, ensure_ascii=False, indent=2)
+        update_metrics()
     except Exception as e:
         logger.error(f"Failed to save statistics: {e}")
 
@@ -113,6 +139,8 @@ def get_text_menu():
 
 @dp.message(F.text == '/start')
 async def send_welcome(message: types.Message):
+    messages_received.inc()
+    command_starts.inc()
     user_id = message.from_user.id
     user_states[user_id] = {'mode': None}
 
@@ -133,6 +161,7 @@ async def send_welcome(message: types.Message):
 
 @dp.message(F.command == "help")
 async def send_help(message: types.Message):
+    messages_received.inc()
     help_text = (
         "📋 *Bot Help*\n\n"
         "📝 *Text Processing:*\n"
@@ -160,7 +189,7 @@ async def show_stats(message: types.Message):
 
 @dp.message(F.command == "chatid")
 async def chatid_handler(message: types.Message):
-    """Sends current chat ID"""
+    messages_received.inc()
     await message.reply(f"Chat ID: {message.chat.id}")
 
 
@@ -532,6 +561,9 @@ async def init_bot():
 
 async def main():
     """Main launch function"""
+    # Start Prometheus metrics server
+    start_http_server(8000)
+
     # Start background tasks
     asyncio.create_task(init_bot())
 

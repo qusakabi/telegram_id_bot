@@ -11,12 +11,14 @@ services:
       - ETHERSCAN_TOKEN=${ETHERSCAN_TOKEN}
     ports:
       - "8000:8000"
+    volumes:
+      - ./wallets.json:/app/wallets.json
   prometheus:
     image: prom/prometheus
     container_name: prometheus
     restart: unless-stopped
     ports:
-      - "9090:9090"
+      - "9091:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     command: --config.file=/etc/prometheus/prometheus.yml

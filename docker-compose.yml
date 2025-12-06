@@ -7,7 +7,7 @@ services:
     env_file:
       - .env
     environment:
-      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
     ports:
       - "8000:8000"
   prometheus:

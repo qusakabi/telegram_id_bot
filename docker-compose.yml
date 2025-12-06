@@ -7,6 +7,8 @@ services:
       - .env
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TONAPI_TOKEN=${TONAPI_TOKEN}
+      - ETHERSCAN_TOKEN=${ETHERSCAN_TOKEN}
     ports:
       - "8000:8000"
   prometheus:

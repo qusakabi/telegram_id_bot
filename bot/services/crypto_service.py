@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import logging
 from datetime import datetime
 import aiohttp
 from typing import Dict, List, Optional
@@ -15,6 +16,8 @@ last_transactions: Dict[str, str] = {}
 # Environment variables
 TONAPI_TOKEN = os.getenv('TONAPI_TOKEN')
 ETHERSCAN_TOKEN = os.getenv('ETHERSCAN_TOKEN')
+
+logger = logging.getLogger(__name__)
 
 
 def load_wallets() -> Dict[str, List[Dict]]:
@@ -33,16 +36,27 @@ def save_wallets(wallets: Dict[str, List[Dict]]) -> None:
 
 async def get_ton_balance(address: str) -> Optional[float]:
     """Получение баланса TON"""
+    if not TONAPI_TOKEN:
+        logger.error("TONAPI_TOKEN не установлен")
+        return None
+
     url = f"https://tonapi.io/v2/accounts/{address}"
     headers = {"Authorization": f"Bearer {TONAPI_TOKEN}"}
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers=headers) as response:
-            if response.status == 200:
-                data = await response.json()
-                balance = int(data.get('balance', 0)) / 1e9
-                return balance
-            return None
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers) as response:
+                logger.debug(f"TON API response status: {response.status}")
+                if response.status == 200:
+                    data = await response.json()
+                    balance = int(data.get('balance', 0)) / 1e9
+                    logger.debug(f"TON balance for {address}: {balance}")
+                    return balance
+                else:
+                    logger.error(f"TON API error: {response.status} - {await response.text()}")
+    except Exception as e:
+        logger.error(f"Ошибка при получении TON баланса для {address}: {e}")
+    return None
 
 
 async def get_btc_balance(address: str) -> Optional[float]:
@@ -63,6 +77,10 @@ async def get_btc_balance(address: str) -> Optional[float]:
 
 async def get_eth_balance(address: str) -> Optional[float]:
     """Получение баланса Ethereum"""
+    if not ETHERSCAN_TOKEN:
+        logger.error("ETHERSCAN_TOKEN не установлен")
+        return None
+
     url = f"https://api.etherscan.io/api"
     params = {
         "module": "account",
@@ -72,13 +90,22 @@ async def get_eth_balance(address: str) -> Optional[float]:
         "apikey": ETHERSCAN_TOKEN
     }
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, params=params) as response:
-            if response.status == 200:
-                data = await response.json()
-                if data.get('status') == '1':
-                    balance = int(data.get('result', 0)) / 1e18
-                    return balance
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, params=params) as response:
+                logger.debug(f"Etherscan API response status: {response.status}")
+                if response.status == 200:
+                    data = await response.json()
+                    if data.get('status') == '1':
+                        balance = int(data.get('result', 0)) / 1e18
+                        logger.debug(f"ETH balance for {address}: {balance}")
+                        return balance
+                    else:
+                        logger.error(f"Etherscan API error: {data.get('message', 'Unknown error')}")
+                else:
+                    logger.error(f"Etherscan API HTTP error: {response.status}")
+    except Exception as e:
+        logger.error(f"Ошибка при получении ETH баланса для {address}: {e}")
     return None
 
 
@@ -384,14 +411,20 @@ async def check_wallet_transactions(chat_id: int, wallet_address: str, coin: str
                     last_transactions[wallet_key] = latest_tx_hash
 
     except Exception as e:
-        print(f"Ошибка проверки транзакций {coin} {wallet_address}: {e}")
+        logger.error(f"Ошибка проверки транзакций {coin} {wallet_address}: {e}")
 
 
 async def monitor_all_wallets(bot) -> None:
     """Мониторинг всех кошельков"""
+    logger.info("Запуск мониторинга кошельков")
+    logger.info(f"TONAPI_TOKEN: {'установлен' if TONAPI_TOKEN else 'не установлен'}")
+    logger.info(f"ETHERSCAN_TOKEN: {'установлен' if ETHERSCAN_TOKEN else 'не установлен'}")
+
     while True:
         try:
             wallets = load_wallets()
+            total_wallets = sum(len(user_wallets) for user_wallets in wallets.values())
+            logger.debug(f"Проверка {total_wallets} кошельков")
 
             for chat_id, user_wallets in wallets.items():
                 for wallet in user_wallets:
@@ -405,5 +438,5 @@ async def monitor_all_wallets(bot) -> None:
             await asyncio.sleep(30)  # Проверка каждые 30 секунд
 
         except Exception as e:
-            print(f"Ошибка мониторинга: {e}")
+            logger.error(f"Ошибка мониторинга: {e}")
             await asyncio.sleep(30)

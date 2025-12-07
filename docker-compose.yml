@@ -1,6 +1,6 @@
 services:
   bot:
-    build: .
+    image: ghcr.io/qusakabi/telegram_id_bot:latest
     container_name: telegram_id_bot
     restart: unless-stopped
     env_file:
